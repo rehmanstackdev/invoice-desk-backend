@@ -1,0 +1,6 @@
+export enum InvoiceStatus {
+  PROCESSING = 'PROCESSING',
+  NEEDS_REVIEW = 'NEEDS_REVIEW',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+}
