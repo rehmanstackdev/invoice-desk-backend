@@ -1,8 +1,8 @@
-import { NestFactory } from '@nestjs/core';
+﻿import { NestFactory } from '@nestjs/core';
 import { AppModule, ObserveInstrument } from './app.module.js';
 import { ValidationPipe } from '@nestjs/common';
 
-async function bootstrap() {
+export async function createApp() {
   const app = await NestFactory.create(AppModule, {
     instrument: ObserveInstrument,
   });
@@ -14,6 +14,14 @@ async function bootstrap() {
     forbidNonWhitelisted: true,
     transform: true,
   }));
+  return app;
+}
+
+async function bootstrap() {
+  const app = await createApp();
   await app.listen(Number(process.env.PORT ?? 3001));
 }
-await bootstrap();
+
+if (!process.env.VERCEL) {
+  await bootstrap();
+}
