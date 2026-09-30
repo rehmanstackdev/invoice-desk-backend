@@ -1,118 +1,128 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Invoice Approval Desk — API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+NestJS 12 + TypeORM + PostgreSQL backend for the invoice approval workflow. Invoices move through `PROCESSING → NEEDS_REVIEW → APPROVED | REJECTED`, and the API flags likely duplicate submissions and blocks approving them.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+- Stack: NestJS 12, TypeORM, PostgreSQL 17, class-validator, oxlint, Vitest
+- Deployed to Vercel as a single Vercel Function (Fluid compute)
 
-## Description
+## Requirements
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- Node.js 20+
+- Docker (for the local PostgreSQL) or any reachable PostgreSQL instance
 
-## Project setup
+## Run locally
 
 ```bash
-$ npm install
+git clone https://github.com/rehmanstackdev/invoice-desk-backend.git
+cd invoice-desk-backend
+
+npm install
+cp .env.example .env
+docker compose up -d db
+
+npm run db:migrate
+npm run db:seed
+npm run start:dev
 ```
 
-## Compile and run the project
+The API listens on <http://localhost:3001>. Verify it:
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+curl http://localhost:3001/invoices
 ```
 
-## Run tests
+`db:seed` is idempotent (it inserts with `ON CONFLICT DO NOTHING`), so it is safe to re-run. It creates six sample invoices, including a duplicate pair sharing vendor `Pioneer Concrete Supply` and invoice number `PCS-80396`.
+
+To clean up the database container and its volume:
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+docker compose down -v
 ```
 
-## Deployment
+### Environment variables
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+| Variable | Required | Description |
+| --- | --- | --- |
+| `DATABASE_URL` | yes | PostgreSQL connection string |
+| `DATABASE_SSL` | no | Set `true` for managed providers (Neon, Supabase, RDS) |
+| `PORT` | no | Defaults to `3001`; Vercel injects this automatically |
+| `WEB_ORIGIN` | no | CORS origin, defaults to `http://localhost:3000` |
+| `TYPEORM_MIGRATIONS_RUN` | no | Set `true` to run migrations on boot (used in production) |
+| `OBSERVE_APP_KEY` / `OBSERVE_APP_SECRET` | no | Enables [Nest Observe](https://observe.nestjs.com) telemetry when both are set |
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+`src/config/load-env.ts` also reads a `.env` one directory up, so the API can be run from a workspace checkout that keeps shared env files at the root.
+
+## API
+
+| Method | Route | Notes |
+| --- | --- | --- |
+| `GET` | `/invoices` | Optional `?status=` filter; rejects unknown statuses with `400` |
+| `GET` | `/invoices/:id` | `404` when not found; `400` on a non-UUID id |
+| `POST` | `/invoices` | Requires at least one line item |
+| `PATCH` | `/invoices/:id/status` | Body `{ "status": "APPROVED" \| "REJECTED" }` |
+
+Every invoice response carries two computed fields that are not columns on the table:
+
+- `isDuplicate` — true when another invoice shares the same normalized vendor name and invoice number
+- `duplicateOf` — the id of the matching invoice, or `null`
+
+`PATCH /invoices/:id/status` enforces two business rules: only `NEEDS_REVIEW` invoices can be decided, and a flagged duplicate cannot be approved. Everything else returns `400` with a message explaining which rule was hit.
+
+### Example
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+curl -X POST http://localhost:3001/invoices \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "vendorName": "Pioneer Concrete Supply",
+    "vendorEmail": "billing@pioneerconcrete.example",
+    "invoiceNumber": "PCS-81000",
+    "invoiceDate": "2026-09-30",
+    "dueDate": "2026-10-30",
+    "subtotal": 1000,
+    "tax": 80,
+    "total": 1080,
+    "projectName": "Riverfront Medical Center",
+    "lineItems": [
+      { "description": "Ready-mix concrete", "quantity": 2, "unitPrice": 500, "amount": 1000 }
+    ]
+  }'
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Scripts
 
-## Observability
+| Command | Description |
+| --- | --- |
+| `npm run start:dev` | Watch mode |
+| `npm run build` | Compile to `dist/` |
+| `npm run start:prod` | Run the compiled build |
+| `npm run db:migrate` / `db:revert` | Apply / roll back migrations |
+| `npm run db:seed` | Load sample invoices |
+| `npm run lint` | oxlint with type-aware rules |
+| `npm test` | Unit tests (Vitest) |
+| `npm run test:e2e` | End-to-end tests |
+| `npm run test:cov` | Coverage report |
 
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
+## Deploy to Vercel
 
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
+1. Import `rehmanstackdev/invoice-desk-backend` at [vercel.com/new](https://vercel.com/new). Leave Root Directory at the repo root.
+2. Vercel detects NestJS automatically via `src/main.ts` and builds it as a single Function. `vercel.json` only raises `maxDuration` to 30s.
+3. Add environment variables for Production and Preview:
 
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
+   ```
+   DATABASE_URL=postgresql://...
+   DATABASE_SSL=true
+   WEB_ORIGIN=https://<your-web-domain>
+   TYPEORM_MIGRATIONS_RUN=true
+   ```
 
-This project is already instrumented. Create a free account at [observe.nestjs.com](https://observe.nestjs.com), add an application, and paste the generated app key and secret into the `ObserveModule.forRoot()` call in `src/app.module.ts`.
+4. Deploy. Vercel sets `PORT` itself; `src/main.ts` already reads it.
 
-The free plan needs no payment details and covers 300,000 events a month. You can also browse the [live demo](https://www.observe-demo.nestjs.com/dashboard) first - the whole dashboard over a busy service's data, with nothing to install.
+Set `TYPEORM_MIGRATIONS_RUN=true` on the first deploy so the schema is created, then leave it on. Migrations use `IF NOT EXISTS`-free raw DDL, so switching it off after the first successful run avoids re-running DDL on every cold start. Watch the deploy log for migration errors before promoting to production.
 
-## Resources
+## Design notes
 
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observe](https://observe.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- **`synchronize: false` everywhere.** Schema changes only happen through the migration in `src/database/migrations/`. There is no path where entity decorators silently rewrite production tables.
+- **Money as `numeric`.** `subtotal`, `tax`, `total`, `quantity`, `unitPrice`, and `amount` are `numeric` columns, surfaced as strings in the API. `InvoicesService.toDecimalString` normalizes every incoming value to two decimal places before it reaches TypeORM, so floats never round-trip through the database.
+- **Duplicate detection at read time.** `findAll` groups by a normalized `vendor::invoiceNumber` key in memory and annotates the result. There is no unique index on those columns, because a real duplicate needs to persist so a human can review and reject it — enforcing uniqueness in the schema would make the exact case the workflow exists to catch impossible to store.
+- **Validation at the pipe, not the service.** `ValidationPipe` in `src/main.ts` runs with `whitelist` and `forbidNonWhitelisted`, so unknown properties are a `400` and the DTOs in `dto/` are the contract.
