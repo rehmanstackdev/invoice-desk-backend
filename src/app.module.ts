@@ -26,6 +26,7 @@ const observeImports = process.env.OBSERVE_APP_KEY && process.env.OBSERVE_APP_SE
       synchronize: false,
       migrationsRun: process.env.TYPEORM_MIGRATIONS_RUN === 'true',
       autoLoadEntities: true,
+      connectTimeoutMS: 5000,
     }),
     InvoicesModule,
   ],
