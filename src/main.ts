@@ -1,6 +1,8 @@
-﻿import { NestFactory } from '@nestjs/core';
+import 'reflect-metadata';
+import { NestFactory } from '@nestjs/core';
 import { AppModule, ObserveInstrument } from './app.module.js';
 import { ValidationPipe } from '@nestjs/common';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 
 export async function createApp() {
   const app = await NestFactory.create(AppModule, {
@@ -17,11 +19,24 @@ export async function createApp() {
   return app;
 }
 
-async function bootstrap() {
+let instance: any;
+
+async function getInstance() {
+  if (instance) return instance;
   const app = await createApp();
-  await app.listen(Number(process.env.PORT ?? 3001));
+  await app.init();
+  instance = app.getHttpAdapter().getInstance();
+  return instance;
 }
 
+const handler = async (req: IncomingMessage, res: ServerResponse) => {
+  const expressApp = await getInstance();
+  return expressApp(req, res);
+};
+
+export default handler;
+
 if (!process.env.VERCEL) {
-  await bootstrap();
+  const app = await createApp();
+  await app.listen(Number(process.env.PORT ?? 3001));
 }

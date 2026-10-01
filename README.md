@@ -106,7 +106,7 @@ curl -X POST http://localhost:3001/invoices \
 ## Deploy to Vercel
 
 1. Import `rehmanstackdev/invoice-desk-backend` at [vercel.com/new](https://vercel.com/new). Leave Root Directory at the repo root.
-2. Vercel detects NestJS automatically via `src/main.ts` and builds it as a single Function. `vercel.json` only raises `maxDuration` to 30s.
+2. `src/main.ts` is the Serverless Function. It default-exports a handler that lazily boots Nest once per container and forwards the request to the Express instance. The `listen()` call is guarded by `!process.env.VERCEL`, so local runs bind to `PORT` and Vercel runs do not. `vercel.json` routes every path to that file.
 3. Add environment variables for Production and Preview:
 
    ```
