@@ -1,10 +1,40 @@
-import 'reflect-metadata';
+﻿import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
+import { ExpressAdapter } from '@nestjs/platform-express';
+import express from 'express';
 import { AppModule, ObserveInstrument } from './app.module.js';
 import { ValidationPipe } from '@nestjs/common';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-export async function createApp() {
+const server = express();
+let isInitialized = false;
+
+export async function bootstrapServerless() {
+  if (isInitialized) return server;
+  const app = await NestFactory.create(
+    AppModule,
+    new ExpressAdapter(server),
+    { instrument: ObserveInstrument },
+  );
+  app.enableCors({
+    origin: process.env.WEB_ORIGIN ?? 'http://localhost:3000',
+  });
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+  }));
+  await app.init();
+  isInitialized = true;
+  return server;
+}
+
+export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  const expressServer = await bootstrapServerless();
+  expressServer(req, res);
+}
+
+if (!process.env.VERCEL) {
   const app = await NestFactory.create(AppModule, {
     instrument: ObserveInstrument,
   });
@@ -16,27 +46,5 @@ export async function createApp() {
     forbidNonWhitelisted: true,
     transform: true,
   }));
-  return app;
-}
-
-let instance: any;
-
-async function getInstance() {
-  if (instance) return instance;
-  const app = await createApp();
-  await app.init();
-  instance = app.getHttpAdapter().getInstance();
-  return instance;
-}
-
-const handler = async (req: IncomingMessage, res: ServerResponse) => {
-  const expressApp = await getInstance();
-  return expressApp(req, res);
-};
-
-export default handler;
-
-if (!process.env.VERCEL) {
-  const app = await createApp();
   await app.listen(Number(process.env.PORT ?? 3001));
 }
